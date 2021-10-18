@@ -1,9 +1,15 @@
 #include <cassert>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticIDs.h"
+#include "clang/Basic/SourceLocation.h"
 #include "clang/AST/ASTConsumer.h"
+#include "clang/AST/ASTContext.h"
+#include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
@@ -12,8 +18,49 @@
 #include "clang/Frontend/FrontendPluginRegistry.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Casting.h"
 
 namespace {
+
+class FireError : public std::exception
+{
+public:
+  FireError(std::string const &What, clang::SourceLocation const &Where)
+  : What_(What),
+    Where_(Where)
+  {}
+
+  char const *what() const noexcept override
+  { return What_.c_str(); }
+
+  clang::SourceLocation where() const noexcept
+  { return Where_; }
+
+private:
+  std::string What_;
+  clang::SourceLocation Where_;
+};
+
+class FireMatchCallback : public clang::ast_matchers::MatchFinder::MatchCallback
+{
+public:
+  void run(clang::ast_matchers::MatchFinder::MatchResult const &Result) override
+  {
+    auto FireCall { Result.Nodes.getNodeAs<clang::CallExpr>("fire") };
+
+    auto FireCallLoc = FireCall->getCalleeDecl()->getLocation();
+
+    if (FireCall->getNumArgs() != 1)
+      throw FireError("fire::Fire expects exactly one argument", FireCallLoc);
+
+    auto FireArg { llvm::dyn_cast<clang::DeclRefExpr>(FireCall->getArg(0)) };
+    if (!FireArg)
+      throw FireError("fire::Fire expects a function or class type argument", FireCallLoc);
+
+    auto FireFunctionDecl { llvm::dyn_cast<clang::FunctionDecl>(FireArg->getDecl()) };
+    assert(FireFunctionDecl); // XXX
+  }
+};
 
 class FireConsumer : public clang::ASTConsumer
 {
@@ -28,28 +75,33 @@ public:
           functionDecl(
             allOf(
               hasName("Fire"),
-              hasParent(
+              hasAncestor( // XXX
                 namespaceDecl(
                   hasName("fire")))))))
     };
 
-    class FireMatchCallback : public MatchFinder::MatchCallback
-    {
-    public:
-      void run(MatchFinder::MatchResult const &Result) override
-      {
-        auto Node { Result.Nodes.getNodeAs<clang::CallExpr>("fire") };
-        assert(Node);
-
-        // XXX
-      }
-    };
-
-    MatchFinder MatchFinder;
     FireMatchCallback MatchCallback;
 
-    MatchFinder.addMatcher(FireMatchExpression.bind("fire"), &MatchCallback);
+    MatchFinder_.addMatcher(FireMatchExpression.bind("fire"), &MatchCallback);
   }
+
+  void HandleTranslationUnit(clang::ASTContext &Context) override
+  {
+    try {
+      MatchFinder_.matchAST(Context);
+
+    } catch (FireError const &e) {
+      auto &Diags { Context.getDiagnostics() };
+
+      unsigned ID { Diags.getDiagnosticIDs()->getCustomDiagID(
+                      clang::DiagnosticIDs::Error, e.what()) };
+
+      Diags.Report(e.where(), ID);
+    }
+  }
+
+private:
+  clang::ast_matchers::MatchFinder MatchFinder_;
 };
 
 class FireAction : public clang::PluginASTAction
@@ -67,6 +119,8 @@ protected:
   {
     return true; // XXX
   }
+
+  // XXX ActionType?
 };
 
 } // end namespace
