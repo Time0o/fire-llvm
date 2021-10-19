@@ -48,7 +48,7 @@ public:
   {
     auto FireCall { Result.Nodes.getNodeAs<clang::CallExpr>("fire") };
 
-    auto FireCallLoc = FireCall->getCalleeDecl()->getLocation();
+    auto FireCallLoc = FireCall->getBeginLoc();
 
     if (FireCall->getNumArgs() != 1)
       throw FireError("fire::Fire expects exactly one argument", FireCallLoc);
