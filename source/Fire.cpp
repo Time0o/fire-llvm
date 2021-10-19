@@ -65,7 +65,7 @@ public:
 class FireConsumer : public clang::ASTConsumer
 {
 public:
-  FireConsumer()
+  void HandleTranslationUnit(clang::ASTContext &Context) override
   {
     using namespace clang::ast_matchers;
 
@@ -82,13 +82,11 @@ public:
 
     FireMatchCallback MatchCallback;
 
-    MatchFinder_.addMatcher(FireMatchExpression.bind("fire"), &MatchCallback);
-  }
+    clang::ast_matchers::MatchFinder MatchFinder;
+    MatchFinder.addMatcher(FireMatchExpression.bind("fire"), &MatchCallback);
 
-  void HandleTranslationUnit(clang::ASTContext &Context) override
-  {
     try {
-      MatchFinder_.matchAST(Context);
+      MatchFinder.matchAST(Context);
 
     } catch (FireError const &e) {
       auto &Diags { Context.getDiagnostics() };
@@ -99,9 +97,6 @@ public:
       Diags.Report(e.where(), ID);
     }
   }
-
-private:
-  clang::ast_matchers::MatchFinder MatchFinder_;
 };
 
 class FireAction : public clang::PluginASTAction
