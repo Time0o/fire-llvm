@@ -45,7 +45,7 @@ private:
 class FireMatchCallback : public clang::ast_matchers::MatchFinder::MatchCallback
 {
 public:
-  FireMatchCallback(clang::Rewriter *Rewriter)
+  FireMatchCallback(clang::Rewriter &Rewriter)
   : Rewriter_(Rewriter)
   {}
 
@@ -65,31 +65,24 @@ public:
     auto FireFunctionDecl { llvm::dyn_cast<clang::FunctionDecl>(FireArg->getDecl()) };
     assert(FireFunctionDecl); // XXX
 
-    Rewriter_->ReplaceText(FireCall->getSourceRange(),
-                           "std::printf(\"hello fire\");"); // XXX
+    Rewriter_.ReplaceText(FireCall->getSourceRange(),
+                          "std::printf(\"hello fire\");"); // XXX
   }
 
 private:
-  clang::Rewriter *Rewriter_;
+  clang::Rewriter &Rewriter_;
 };
 
 class FireConsumer : public clang::ASTConsumer
 {
 public:
-  FireConsumer(std::string *FileRewritten)
-  : FileRewritten_(FileRewritten)
+  FireConsumer(clang::Rewriter &Rewriter)
+  : Rewriter_(Rewriter)
   {}
 
   void HandleTranslationUnit(clang::ASTContext &Context) override
   {
     using namespace clang::ast_matchers;
-
-    // create file rewriter
-    auto &SourceManager { Context.getSourceManager() };
-    auto &LangOpts { Context.getLangOpts() };
-
-    clang::Rewriter Rewriter;
-    Rewriter.setSourceMgr(SourceManager, LangOpts);
 
     // create match expression
     auto FireMatchExpression {
@@ -104,7 +97,7 @@ public:
     };
 
     // create match callback
-    FireMatchCallback MatchCallback(&Rewriter);
+    FireMatchCallback MatchCallback(Rewriter_);
 
     // create and run match finder
     clang::ast_matchers::MatchFinder MatchFinder;
@@ -121,17 +114,10 @@ public:
 
       Diags.Report(e.where(), ID);
     }
-
-    // copy rewritten file to buffer
-    auto FileID { SourceManager.getMainFileID() };
-    auto FileRewriteBuffer { Rewriter.getRewriteBufferFor(FileID) };
-
-    *FileRewritten_ = std::string(FileRewriteBuffer->begin(),
-                                  FileRewriteBuffer->end());
   }
 
 private:
-  std::string *FileRewritten_;
+  clang::Rewriter &Rewriter_;
 };
 
 class FireAction : public clang::PluginASTAction
@@ -141,7 +127,9 @@ protected:
     clang::CompilerInstance &CI,
     llvm::StringRef) override
   {
-    return std::make_unique<FireConsumer>(&FileRewritten_);
+    Rewriter_.setSourceMgr(CI.getSourceManager(), CI.getLangOpts());
+
+    return std::make_unique<FireConsumer>(Rewriter_);
   }
 
   bool ParseArgs(clang::CompilerInstance const &,
@@ -155,20 +143,26 @@ protected:
     return clang::PluginASTAction::ReplaceAction;
   }
 
-  bool BeginSourceFileAction (clang::CompilerInstance &)
+  bool BeginSourceFileAction (clang::CompilerInstance &CI)
   {
-    FileRewritten_.clear();
+    FileID_ = CI.getSourceManager().getMainFileID();
 
     return true;
   }
 
   void EndSourceFileAction() override
   {
+    auto FileRewriteBuffer { Rewriter_.getRewriteBufferFor(FileID_) };
+
+    std::string FileRewritten { FileRewriteBuffer->begin(),
+                                FileRewriteBuffer->end() };
+
     // XXX
   }
 
 private:
-  std::string FileRewritten_;
+  clang::Rewriter Rewriter_;
+  clang::FileID FileID_;
 };
 
 } // end namespace
