@@ -89,7 +89,18 @@ public:
     auto FireFunctionDecl { llvm::dyn_cast<clang::FunctionDecl>(FireArg->getDecl()) };
     assert(FireFunctionDecl); // XXX
 
-    std::string NewFireMain { llvm::formatv("FIRE({0})", FireFunctionDecl->getName()) };
+    // XXX handle default values
+    for (auto FireParam : FireFunctionDecl->parameters()) {
+      auto FireParamLoc { FireParam->getSourceRange() };
+
+      std::string NewFireParam { llvm::formatv(
+        "{0} = fire::arg(\"-{1}\")", getSource(FireParamLoc), FireParam->getName()) };
+
+      FileRewriter_->ReplaceText(FireParamLoc, NewFireParam);
+    }
+
+    std::string NewFireMain { llvm::formatv(
+      "FIRE({0})", FireFunctionDecl->getName()) };
 
     FileRewriter_->ReplaceText(FireMainLoc, NewFireMain);
   }
@@ -120,6 +131,16 @@ private:
     }
 
     return Ancestors;
+  }
+
+  std::string getSource(clang::SourceRange const &Range) const
+  {
+    auto &SourceManager { Context_.getSourceManager() };
+
+    auto Begin { SourceManager.getCharacterData(Range.getBegin()) };
+    auto End { SourceManager.getCharacterData(Range.getEnd()) };
+
+    return std::string(Begin, End - Begin + 1);
   }
 
   clang::ASTContext &Context_;
