@@ -13,13 +13,17 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/SourceLocation.h"
+#include "clang/CodeGen/CodeGenAction.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
+#include "clang/Lex/PreprocessorOptions.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 namespace {
 
@@ -45,8 +49,8 @@ private:
 class FireMatchCallback : public clang::ast_matchers::MatchFinder::MatchCallback
 {
 public:
-  FireMatchCallback(clang::Rewriter &Rewriter)
-  : Rewriter_(Rewriter)
+  FireMatchCallback(clang::Rewriter *FileRewriter)
+  : FileRewriter_(FileRewriter)
   {}
 
   void run(clang::ast_matchers::MatchFinder::MatchResult const &Result) override
@@ -65,19 +69,19 @@ public:
     auto FireFunctionDecl { llvm::dyn_cast<clang::FunctionDecl>(FireArg->getDecl()) };
     assert(FireFunctionDecl); // XXX
 
-    Rewriter_.ReplaceText(FireCall->getSourceRange(),
-                          "std::printf(\"hello fire\");"); // XXX
+    FileRewriter_->ReplaceText(FireCall->getSourceRange(),
+                               "std::printf(\"hello fire\")"); // XXX
   }
 
 private:
-  clang::Rewriter &Rewriter_;
+  clang::Rewriter *FileRewriter_;
 };
 
 class FireConsumer : public clang::ASTConsumer
 {
 public:
-  FireConsumer(clang::Rewriter &Rewriter)
-  : Rewriter_(Rewriter)
+  FireConsumer(clang::Rewriter *FileRewriter)
+  : FileRewriter_(FileRewriter)
   {}
 
   void HandleTranslationUnit(clang::ASTContext &Context) override
@@ -97,7 +101,7 @@ public:
     };
 
     // create match callback
-    FireMatchCallback MatchCallback(Rewriter_);
+    FireMatchCallback MatchCallback(FileRewriter_);
 
     // create and run match finder
     clang::ast_matchers::MatchFinder MatchFinder;
@@ -117,7 +121,7 @@ public:
   }
 
 private:
-  clang::Rewriter &Rewriter_;
+  clang::Rewriter *FileRewriter_;
 };
 
 class FireAction : public clang::PluginASTAction
@@ -125,11 +129,18 @@ class FireAction : public clang::PluginASTAction
 protected:
   std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
     clang::CompilerInstance &CI,
-    llvm::StringRef) override
+    llvm::StringRef FileName) override
   {
-    Rewriter_.setSourceMgr(CI.getSourceManager(), CI.getLangOpts());
+    auto &SourceManager { CI.getSourceManager() };
+    auto &LangOpts { CI.getLangOpts() };
 
-    return std::make_unique<FireConsumer>(Rewriter_);
+    CI_ = &CI;
+
+    FileName_ = FileName;
+    FileID_ = SourceManager.getMainFileID(); // XXX
+    FileRewriter_.setSourceMgr(SourceManager, LangOpts);
+
+    return std::make_unique<FireConsumer>(&FileRewriter_);
   }
 
   bool ParseArgs(clang::CompilerInstance const &,
@@ -143,26 +154,50 @@ protected:
     return clang::PluginASTAction::ReplaceAction;
   }
 
-  bool BeginSourceFileAction (clang::CompilerInstance &CI)
-  {
-    FileID_ = CI.getSourceManager().getMainFileID();
-
-    return true;
-  }
-
   void EndSourceFileAction() override
   {
-    auto FileRewriteBuffer { Rewriter_.getRewriteBufferFor(FileID_) };
+    auto &CodeGenOpts { CI_->getCodeGenOpts() };
+    auto &Target { CI_->getTarget() };
+    auto &Diagnostics { CI_->getDiagnostics() };
 
-    std::string FileRewritten { FileRewriteBuffer->begin(),
-                                FileRewriteBuffer->end() };
+    // retrieve rewrite buffer
+    auto FileRewriteBuffer { FileRewriter_.getRewriteBufferFor(FileID_) };
 
-    // XXX
+    std::string FileContent {
+        FileRewriteBuffer->begin(), FileRewriteBuffer->end() };
+
+    auto FileMemoryBuffer { llvm::MemoryBuffer::getMemBufferCopy(FileContent) };
+
+    // create new compiler instance
+    auto CInvNew { std::make_shared<clang::CompilerInvocation>() };
+
+    assert(clang::CompilerInvocation::CreateFromArgs(
+      *CInvNew, CodeGenOpts.CommandLineArgs, Diagnostics));
+
+    clang::CompilerInstance CINew;
+    CINew.setInvocation(CInvNew);
+    CINew.setTarget(&Target);
+    CINew.createDiagnostics();
+
+    // create "virtual" input file
+    auto &PreprocessorOpts { CINew.getPreprocessorOpts() };
+
+    PreprocessorOpts.addRemappedFile(FileName_, FileMemoryBuffer.get());
+
+    // generate code
+    clang::EmitObjAction EmitObj;
+    CINew.ExecuteAction(EmitObj);
+
+    // clean up rewrite buffer
+    FileMemoryBuffer.release();
   }
 
 private:
-  clang::Rewriter Rewriter_;
+  clang::CompilerInstance *CI_;
+
+  std::string FileName_;
   clang::FileID FileID_;
+  clang::Rewriter FileRewriter_;
 };
 
 } // end namespace
