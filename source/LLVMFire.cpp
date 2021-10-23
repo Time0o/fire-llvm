@@ -1,5 +1,6 @@
 #include <cassert>
 #include <memory>
+#include <queue>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -8,6 +9,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/ParentMapContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/Basic/Diagnostic.h"
@@ -23,6 +25,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 namespace {
@@ -49,8 +52,9 @@ private:
 class FireMatchCallback : public clang::ast_matchers::MatchFinder::MatchCallback
 {
 public:
-  FireMatchCallback(clang::Rewriter *FileRewriter)
-  : FileRewriter_(FileRewriter)
+  FireMatchCallback(clang::ASTContext &Context, clang::Rewriter *FileRewriter)
+  : Context_(Context),
+    FileRewriter_(FileRewriter)
   {}
 
   void run(clang::ast_matchers::MatchFinder::MatchResult const &Result) override
@@ -60,20 +64,65 @@ public:
     auto FireCallLoc = FireCall->getBeginLoc();
 
     if (FireCall->getNumArgs() != 1)
-      throw FireError("fire::Fire expects exactly one argument", FireCallLoc);
+      throw FireError("fire::LLVMFire expects exactly one argument", FireCallLoc);
 
     auto FireArg { llvm::dyn_cast<clang::DeclRefExpr>(FireCall->getArg(0)) };
     if (!FireArg)
-      throw FireError("fire::Fire expects a function or class type argument", FireCallLoc);
+      throw FireError("fire::LLVMFire expects a function or class type argument", FireCallLoc);
+
+    clang::FunctionDecl const *FireMain { nullptr };
+
+    for (auto const &FireCallAncestor : getAncestors(*FireCall)) {
+      auto MaybeFireMain { FireCallAncestor.get<clang::FunctionDecl>() };
+
+      if (MaybeFireMain && MaybeFireMain->isMain()) {
+        FireMain = MaybeFireMain;
+        break;
+      }
+    }
+
+    if (!FireMain)
+      throw FireError("fire::LLVMFire must be called inside 'main'", FireCallLoc);
+
+    auto FireMainLoc { FireMain->getSourceRange() };
 
     auto FireFunctionDecl { llvm::dyn_cast<clang::FunctionDecl>(FireArg->getDecl()) };
     assert(FireFunctionDecl); // XXX
 
-    FileRewriter_->ReplaceText(FireCall->getSourceRange(),
-                               "std::printf(\"hello fire\")"); // XXX
+    std::string NewFireMain { llvm::formatv("FIRE({0})", FireFunctionDecl->getName()) };
+
+    FileRewriter_->ReplaceText(FireMainLoc, NewFireMain);
   }
 
 private:
+  template<typename T>
+  std::vector<clang::DynTypedNode> getAncestors(T const &Node) const
+  {
+    std::vector<clang::DynTypedNode> Ancestors;
+
+    std::queue<clang::DynTypedNode> ParentQueue;
+
+    for (auto const &Parent : Context_.getParents(Node))
+      ParentQueue.push(Parent);
+
+    while (!ParentQueue.empty()) {
+      std::size_t NumParents { ParentQueue.size() };
+
+      for (std::size_t i = 0; i < NumParents; ++i) {
+        auto Parent { ParentQueue.front() };
+        ParentQueue.pop();
+
+        Ancestors.push_back(Parent);
+
+        for (auto const &GrandParent : Context_.getParents(Parent))
+          ParentQueue.push(GrandParent);
+      }
+    }
+
+    return Ancestors;
+  }
+
+  clang::ASTContext &Context_;
   clang::Rewriter *FileRewriter_;
 };
 
@@ -94,14 +143,16 @@ public:
         callee(
           functionDecl(
             allOf(
-              hasName("Fire"),
-              hasAncestor( // XXX
-                namespaceDecl(
-                  hasName("fire")))))))
+              hasName("LLVMFire"),
+              hasParent(
+                functionTemplateDecl(
+                  hasParent(
+                    namespaceDecl(
+                      hasName("fire")))))))))
     };
 
     // create match callback
-    FireMatchCallback MatchCallback(FileRewriter_);
+    FireMatchCallback MatchCallback(Context, FileRewriter_);
 
     // create and run match finder
     clang::ast_matchers::MatchFinder MatchFinder;
