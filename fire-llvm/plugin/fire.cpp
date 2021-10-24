@@ -32,6 +32,15 @@
 
 namespace {
 
+static void replace(std::string &Str,
+                    std::string const &From,
+                    std::string const &To)
+{
+  auto It { Str.find(From) };
+  if (It != std::string::npos)
+    Str.replace(It, From.size(), To);
+}
+
 class FireError : public std::exception
 {
 public:
@@ -95,6 +104,8 @@ public:
       auto FireParamLoc { FireParam->getSourceRange() };
 
       auto FireParamType { printType(FireParam->getType()) };
+      replace(FireParamType, "std::optional", "fire::optional");
+
       auto FireParamName { FireParam->getName() };
 
       auto FireParamDash { FireParamName.size() > 1 ? "--" : "-" };
