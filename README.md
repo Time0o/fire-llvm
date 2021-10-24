@@ -1,3 +1,3 @@
 ## Ackknowledgements
 
-LLVMFire is based on [fire-hpp](https://github.com/kongaskristjan/fire-hpp).
+fire-llvm is based on [fire-hpp](https://github.com/kongaskristjan/fire-hpp).

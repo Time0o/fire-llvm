@@ -208,7 +208,7 @@ protected:
 
     CI_ = &CI;
 
-    FileName_ = FileName;
+    FileName_ = FileName.str();
     FileID_ = SourceManager.getMainFileID(); // XXX
     FileRewriter_.setSourceMgr(SourceManager, LangOpts);
 
