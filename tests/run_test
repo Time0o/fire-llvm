@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import sys
+
+
+TEST_CASES = {
+    'add': [
+        (['-x=1', '-y=2'], '1 + 2 = 3')
+    ]
+}
+
+
+def check_test_output(test_process, expected_output):
+    test_output = test_process.stdout.rstrip()
+
+    assert test_output == expected_output, f"{test_output} vs. {expected_output}"
+
+
+def run_test(test_binary):
+    test = os.path.basename(test_binary)
+
+    for args, expected_output in TEST_CASES[test]:
+        test_process = subprocess.run([test_binary] + args,
+                                      check=True,
+                                      capture_output=True,
+                                      encoding='UTF-8')
+
+        check_test_output(test_process, expected_output)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 2:
+        print("Usage: {} TEST_BINARY".format(sys.argv[0]), file=sys.stderr)
+        sys.exit(1)
+
+    run_test(sys.argv[1])

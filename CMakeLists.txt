@@ -4,6 +4,8 @@ project("fire-llvm"
         VERSION 0.1
         LANGUAGES CXX)
 
+include(CTest)
+
 option(FIRE_LLVM_ENABLE_TESTING "Enable tests" ON)
 
 find_package(LLVM REQUIRED CONFIG)
