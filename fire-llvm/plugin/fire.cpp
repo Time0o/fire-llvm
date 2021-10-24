@@ -93,8 +93,14 @@ public:
     for (auto FireParam : FireFunctionDecl->parameters()) {
       auto FireParamLoc { FireParam->getSourceRange() };
 
-      std::string NewFireParam { llvm::formatv(
-        "{0} = fire::arg(\"-{1}\")", getSource(FireParamLoc), FireParam->getName()) };
+      auto FireParamType { getSource(FireParamLoc) };
+      auto FireParamName { FireParam->getName() };
+      auto FireParamDash { FireParamName.size() > 1 ? "--" : "-" };
+
+      std::string NewFireParam { llvm::formatv("{0}{1}= fire::arg(\"{2}{1}\")",
+                                               FireParamType,
+                                               FireParamName,
+                                               FireParamDash) };
 
       FileRewriter_->ReplaceText(FireParamLoc, NewFireParam);
     }
@@ -140,7 +146,7 @@ private:
     auto Begin { SourceManager.getCharacterData(Range.getBegin()) };
     auto End { SourceManager.getCharacterData(Range.getEnd()) };
 
-    return std::string(Begin, End - Begin + 1);
+    return std::string(Begin, End - Begin);
   }
 
   clang::ASTContext &Context_;
