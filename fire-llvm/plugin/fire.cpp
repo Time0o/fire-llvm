@@ -64,11 +64,11 @@ public:
     auto FireCallLoc = FireCall->getBeginLoc();
 
     if (FireCall->getNumArgs() != 1)
-      throw FireError("fire::LLVMFire expects exactly one argument", FireCallLoc);
+      throw FireError("fire::fire_llvm expects exactly one argument", FireCallLoc);
 
     auto FireArg { llvm::dyn_cast<clang::DeclRefExpr>(FireCall->getArg(0)) };
     if (!FireArg)
-      throw FireError("fire::LLVMFire expects a function or class type argument", FireCallLoc);
+      throw FireError("fire::fire_llvm expects a function or class type argument", FireCallLoc);
 
     clang::FunctionDecl const *FireMain { nullptr };
 
@@ -82,7 +82,7 @@ public:
     }
 
     if (!FireMain)
-      throw FireError("fire::LLVMFire must be called inside 'main'", FireCallLoc);
+      throw FireError("fire::fire_llvm must be called inside 'main'", FireCallLoc);
 
     auto FireMainLoc { FireMain->getSourceRange() };
 
@@ -164,7 +164,7 @@ public:
         callee(
           functionDecl(
             allOf(
-              hasName("LLVMFire"),
+              hasName("fire_llvm"),
               hasParent(
                 functionTemplateDecl(
                   hasParent(

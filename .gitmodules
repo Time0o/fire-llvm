@@ -1,0 +1,3 @@
+[submodule "fire-hpp"]
+	path = fire-hpp
+	url = https://github.com/kongaskristjan/fire-hpp

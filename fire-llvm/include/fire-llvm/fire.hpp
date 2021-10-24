@@ -5,6 +5,6 @@
 namespace fire {
 
 template<typename T>
-void LLVMFire(T&&) {}
+void fire_llvm(T&&) {}
 
 } // end namespace fire
