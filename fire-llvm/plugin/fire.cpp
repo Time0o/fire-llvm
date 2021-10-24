@@ -10,6 +10,8 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ParentMapContext.h"
+#include "clang/AST/PrettyPrinter.h"
+#include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/Basic/Diagnostic.h"
@@ -89,18 +91,25 @@ public:
     auto FireFunctionDecl { llvm::dyn_cast<clang::FunctionDecl>(FireArg->getDecl()) };
     assert(FireFunctionDecl); // XXX
 
-    // XXX handle default values
     for (auto FireParam : FireFunctionDecl->parameters()) {
       auto FireParamLoc { FireParam->getSourceRange() };
 
-      auto FireParamType { getSource(FireParamLoc) };
+      auto FireParamType { printType(FireParam->getType()) };
       auto FireParamName { FireParam->getName() };
+
       auto FireParamDash { FireParamName.size() > 1 ? "--" : "-" };
 
-      std::string NewFireParam { llvm::formatv("{0}{1}= fire::arg(\"{2}{1}\")",
-                                               FireParamType,
-                                               FireParamName,
-                                               FireParamDash) };
+      auto FireParamDefault {
+        FireParam->hasDefaultArg()
+          ? ", " + printSource(FireParam->getDefaultArgRange())
+          : "" };
+
+      std::string NewFireParam {
+        llvm::formatv("{0} {1} = fire::arg(\"{2}{1}\"{3})",
+                      FireParamType,
+                      FireParamName,
+                      FireParamDash,
+                      FireParamDefault) };
 
       FileRewriter_->ReplaceText(FireParamLoc, NewFireParam);
     }
@@ -139,14 +148,23 @@ private:
     return Ancestors;
   }
 
-  std::string getSource(clang::SourceRange const &Range) const
+  std::string printType(clang::QualType const &Type) const
+  {
+    auto &LangOpts { Context_.getLangOpts() };
+
+    clang::PrintingPolicy PP { LangOpts };
+
+    return Type.getAsString(PP);
+  }
+
+  std::string printSource(clang::SourceRange const &Range) const
   {
     auto &SourceManager { Context_.getSourceManager() };
 
     auto Begin { SourceManager.getCharacterData(Range.getBegin()) };
     auto End { SourceManager.getCharacterData(Range.getEnd()) };
 
-    return std::string(Begin, End - Begin);
+    return std::string(Begin, End - Begin + 1);
   }
 
   clang::ASTContext &Context_;
