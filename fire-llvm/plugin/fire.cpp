@@ -254,8 +254,9 @@ private:
 class FireConsumer : public clang::ASTConsumer
 {
 public:
-  FireConsumer(clang::Rewriter *FileRewriter)
-  : FileRewriter_(FileRewriter)
+  FireConsumer(clang::Rewriter *FileRewriter, bool *FileRewriteError)
+  : FileRewriter_(FileRewriter),
+    FileRewriteError_(FileRewriteError)
   {}
 
   void HandleTranslationUnit(clang::ASTContext &Context) override
@@ -286,6 +287,8 @@ public:
     try {
       MatchFinder.matchAST(Context);
 
+      *FileRewriteError_ = false;
+
     } catch (FireError const &e) {
       auto &Diags { Context.getDiagnostics() };
 
@@ -293,11 +296,14 @@ public:
                       clang::DiagnosticIDs::Error, e.what()) };
 
       Diags.Report(e.where(), ID);
+
+      *FileRewriteError_ = true;
     }
   }
 
 private:
   clang::Rewriter *FileRewriter_;
+  bool *FileRewriteError_;
 };
 
 class FireAction : public clang::PluginASTAction
@@ -316,7 +322,7 @@ protected:
     FileID_ = SourceManager.getMainFileID(); // XXX
     FileRewriter_.setSourceMgr(SourceManager, LangOpts);
 
-    return std::make_unique<FireConsumer>(&FileRewriter_);
+    return std::make_unique<FireConsumer>(&FileRewriter_, &FileRewriteError_);
   }
 
   bool ParseArgs(clang::CompilerInstance const &,
@@ -332,6 +338,9 @@ protected:
 
   void EndSourceFileAction() override
   {
+    if (FileRewriteError_)
+      return;
+
     auto &CodeGenOpts { CI_->getCodeGenOpts() };
     auto &Target { CI_->getTarget() };
     auto &Diagnostics { CI_->getDiagnostics() };
@@ -374,6 +383,7 @@ private:
   std::string FileName_;
   clang::FileID FileID_;
   clang::Rewriter FileRewriter_;
+  bool FileRewriteError_ = false;
 };
 
 } // end namespace
