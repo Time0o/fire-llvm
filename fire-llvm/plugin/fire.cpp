@@ -101,26 +101,49 @@ public:
     assert(FireFunctionDecl); // XXX
 
     for (auto FireParam : FireFunctionDecl->parameters()) {
-      auto FireParamLoc { FireParam->getSourceRange() };
-
-      auto FireParamType { printType(FireParam->getType()) };
-      replace(FireParamType, "std::optional", "fire::optional");
-
       auto FireParamName { FireParam->getName() };
-
-      auto FireParamDash { FireParamName.size() > 1 ? "--" : "-" };
+      auto FireParamType { FireParam->getType() };
 
       auto FireParamDefault {
         FireParam->hasDefaultArg()
-          ? ", " + printSource(FireParam->getDefaultArgRange())
+          ? printSource(FireParam->getDefaultArgRange())
           : "" };
 
-      std::string NewFireParam {
-        llvm::formatv("{0} {1} = fire::arg(\"{2}{1}\"{3})",
-                      FireParamType,
-                      FireParamName,
-                      FireParamDash,
-                      FireParamDefault) };
+      std::string NewFireParamType { printType(FireParam->getType()) };
+      std::string NewFireParamDefault;
+
+      if (isSTLType(FireParamType, "vector") ||
+          isLValueRefToConstSTLType(FireParamType, "vector")) {
+
+        NewFireParamDefault = "fire::arg(fire::variadic())";
+
+      } else {
+        if (isSTLType(FireParamType, "optional") ||
+            isLValueRefToConstSTLType(FireParamType, "optional")) {
+
+          replace(NewFireParamType, "std::optional", "fire::optional");
+        }
+
+        auto FireParamDash { FireParamName.size() > 1 ? "--" : "-" };
+
+        if (FireParamDefault.empty()) {
+          NewFireParamDefault = llvm::formatv("fire::arg(\"{0}{1}\")",
+                                              FireParamDash,
+                                              FireParamName);
+        } else {
+          NewFireParamDefault = llvm::formatv("fire::arg(\"{0}{1}\", {2})",
+                                              FireParamDash,
+                                              FireParamName,
+                                              FireParamDefault);
+        }
+      }
+
+      std::string NewFireParam { llvm::formatv("{0} {1} = {2}",
+                                               NewFireParamType,
+                                               FireParamName,
+                                               NewFireParamDefault) };
+
+      auto FireParamLoc { FireParam->getSourceRange() };
 
       FileRewriter_->ReplaceText(FireParamLoc, NewFireParam);
     }
@@ -157,6 +180,50 @@ private:
     }
 
     return Ancestors;
+  }
+
+  static bool isSTLType(clang::QualType const &Type,
+                        std::string const &Template)
+  {
+    auto TS { Type->getAs<clang::TemplateSpecializationType>() };
+    if (!TS)
+      return false;
+
+    auto TM { TS->getTemplateName() };
+    auto TD { TM.getAsTemplateDecl() };
+
+    if (!TD || !isInNamespace(TD, "std"))
+      return false;
+
+    return TD->getName() == Template;
+  }
+
+  static bool isLValueRefToConstSTLType(clang::QualType const &Type,
+                                        std::string const &Template)
+  {
+    if (!Type->isLValueReferenceType())
+      return false;
+
+    auto RefType { Type.getNonReferenceType() };
+
+    if (!RefType.isConstQualified())
+      return false;
+
+    return isSTLType(RefType, Template);
+  }
+
+  template<typename T>
+  static bool isInNamespace(T const *Decl, std::string const &Namespace)
+  {
+     auto ND { llvm::dyn_cast<clang::NamespaceDecl>(Decl->getDeclContext()) };
+     if (!ND)
+       return false;
+
+     auto II { ND->getIdentifier() };
+     if (!II || II->getName() != Namespace)
+       return false;
+
+     return llvm::isa<clang::TranslationUnitDecl>(ND->getDeclContext());
   }
 
   std::string printType(clang::QualType const &Type) const
