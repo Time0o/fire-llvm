@@ -102,7 +102,12 @@ public:
 
     for (auto FireParam : FireFunctionDecl->parameters()) {
       auto FireParamRange { FireParam->getSourceRange() };
+
       auto FireParamName { FireParam->getName() };
+
+      if (FireParamName.empty())
+          throw FireError("Parameter must not be unnamed", FireParamRange.getBegin());
+
       auto FireParamType { FireParam->getType() };
 
       auto FireParamDefault {
