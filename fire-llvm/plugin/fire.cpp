@@ -95,12 +95,13 @@ public:
     if (!FireMain)
       throw FireError("fire::fire_llvm must be called inside 'main'", FireCallLoc);
 
-    auto FireMainLoc { FireMain->getSourceRange() };
+    auto FireMainRange { FireMain->getSourceRange() };
 
     auto FireFunctionDecl { llvm::dyn_cast<clang::FunctionDecl>(FireArg->getDecl()) };
     assert(FireFunctionDecl); // XXX
 
     for (auto FireParam : FireFunctionDecl->parameters()) {
+      auto FireParamRange { FireParam->getSourceRange() };
       auto FireParamName { FireParam->getName() };
       auto FireParamType { FireParam->getType() };
 
@@ -112,16 +113,22 @@ public:
       std::string NewFireParamType { printType(FireParam->getType()) };
       std::string NewFireParamDefault;
 
-      if (isSTLType(FireParamType, "vector") ||
-          isLValueRefToConstSTLType(FireParamType, "vector")) {
-
+      if (isSTLType(FireParamType, "vector")) {
         NewFireParamDefault = "fire::arg(fire::variadic())";
 
       } else {
-        if (isSTLType(FireParamType, "optional") ||
-            isLValueRefToConstSTLType(FireParamType, "optional")) {
-
+        if (isSTLType(FireParamType, "optional")) {
           replace(NewFireParamType, "std::optional", "fire::optional");
+
+        } else if (!isSTLType(FireParamType, "string") &&
+                   !FireParamType->isBooleanType() &&
+                   !FireParamType->isIntegerType() &&
+                   !FireParamType->isFloatingType()) {
+
+          throw FireError(
+            "Parameter must have boolean, integral or floating point type "
+            "or be one of std::string, std::vector, std::optional",
+            FireParamRange.getBegin());
         }
 
         auto FireParamDash { FireParamName.size() > 1 ? "--" : "-" };
@@ -143,15 +150,13 @@ public:
                                                FireParamName,
                                                NewFireParamDefault) };
 
-      auto FireParamLoc { FireParam->getSourceRange() };
-
-      FileRewriter_->ReplaceText(FireParamLoc, NewFireParam);
+      FileRewriter_->ReplaceText(FireParamRange, NewFireParam);
     }
 
     std::string NewFireMain { llvm::formatv(
       "FIRE({0})", FireFunctionDecl->getName()) };
 
-    FileRewriter_->ReplaceText(FireMainLoc, NewFireMain);
+    FileRewriter_->ReplaceText(FireMainRange, NewFireMain);
   }
 
 private:
@@ -182,9 +187,15 @@ private:
     return Ancestors;
   }
 
-  static bool isSTLType(clang::QualType const &Type,
-                        std::string const &Template)
+  static bool isSTLType(clang::QualType Type, std::string const &Template)
   {
+    if (Type->isLValueReferenceType()) {
+      Type = Type.getNonReferenceType();
+
+      if (!Type.isConstQualified())
+        return false;
+    }
+
     auto TS { Type->getAs<clang::TemplateSpecializationType>() };
     if (!TS)
       return false;
@@ -196,20 +207,6 @@ private:
       return false;
 
     return TD->getName() == Template;
-  }
-
-  static bool isLValueRefToConstSTLType(clang::QualType const &Type,
-                                        std::string const &Template)
-  {
-    if (!Type->isLValueReferenceType())
-      return false;
-
-    auto RefType { Type.getNonReferenceType() };
-
-    if (!RefType.isConstQualified())
-      return false;
-
-    return isSTLType(RefType, Template);
   }
 
   template<typename T>
