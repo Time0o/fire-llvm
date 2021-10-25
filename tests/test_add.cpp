@@ -4,9 +4,9 @@
 
 namespace {
 
-int fire_main_add(int x, int y)
+int fire_main_add(int a, int b)
 {
-  std::cout << x << " + " << y << " = " << x + y << std::endl;
+  std::cout << "a + b = " << a + b << std::endl;
   return 0;
 }
 

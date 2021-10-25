@@ -6,8 +6,31 @@ import sys
 
 
 TEST_CASES = {
+    'hello': [
+        (['--msg', 'hello world'], 'hello world')
+    ],
     'add': [
-        (['-x=1', '-y=2'], '1 + 2 = 3')
+        (['-a=1', '-b=2'], 'a + b = 3')
+    ],
+    'flag': [
+        ([], 'flag_a = 0, flag_b = 0'),
+        (['--flag_a'], 'flag_a = 1, flag_b = 0'),
+        (['--flag_b'], 'flag_a = 0, flag_b = 1'),
+        (['--flag_a', '--flag_b'], 'flag_a = 1, flag_b = 1')
+    ],
+    'default': [
+        ([], 'def = 0'),
+        (['--def=1'], 'def = 1')
+    ],
+    'optional': [
+        ([], 'opt = nothing'),
+        (['--opt=1'], 'opt = 1')
+    ],
+    'variadic': [
+        ([], 'variadic = {}'),
+        (['1'], 'variadic = {1}'),
+        (['1', '2'], 'variadic = {1, 2}'),
+        (['1', '2', '3'], 'variadic = {1, 2, 3}')
     ]
 }
 

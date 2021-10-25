@@ -9,6 +9,7 @@ foreach(test_source ${test_sources})
   string(REGEX REPLACE "test_(.*).cpp" "\\1" test_prog ${test_prog})
 
   add_executable(${test_prog} ${test_source})
+  target_compile_features(${test_prog} PRIVATE cxx_std_17)
   fire_llvm_config(${test_prog})
 
   add_test(NAME ${test_prog}

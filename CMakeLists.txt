@@ -40,6 +40,8 @@ function(fire_llvm_config TARGET)
   endif()
 
   target_link_libraries(${TARGET} PRIVATE fire-hpp fire-llvm)
+
+  # XXX rebuild when fire-llvm-plugin changes
 endfunction()
 
 if (FIRE_LLVM_ENABLE_TESTING)
