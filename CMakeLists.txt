@@ -41,7 +41,13 @@ function(fire_llvm_config TARGET)
 
   target_link_libraries(${TARGET} PRIVATE fire-hpp fire-llvm)
 
-  # XXX rebuild when fire-llvm-plugin changes
+  # XXX CMake does not support generator expression arguments to OBJECT_DEPENDS
+  # yet, hence there is no way to force rebuilding the target when the plugin
+  # changes
+  #get_target_property(target_sources ${TARGET} SOURCES)
+  #
+  #set_source_files_properties(${target_sources} PROPERTIES
+  #  OBJECT_DEPENDS $<TARGET_FILE:fire-llvm-plugin>)
 endfunction()
 
 if (FIRE_LLVM_ENABLE_TESTING)
