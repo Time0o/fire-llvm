@@ -63,8 +63,11 @@ private:
 class FireMatchCallback : public clang::ast_matchers::MatchFinder::MatchCallback
 {
 public:
-  FireMatchCallback(clang::ASTContext &Context, clang::Rewriter *FileRewriter)
+  FireMatchCallback(clang::ASTContext &Context,
+                    clang::FileID *FileID,
+                    clang::Rewriter *FileRewriter)
   : Context_(Context),
+    FileID_(FileID),
     FileRewriter_(FileRewriter)
   {}
 
@@ -162,6 +165,10 @@ public:
       "FIRE({0})", FireFunctionDecl->getName()) };
 
     FileRewriter_->ReplaceText(FireMainRange, NewFireMain);
+
+    auto &SourceManager { Context_.getSourceManager() };
+
+    *FileID_ = SourceManager.getFileID(FireCallLoc);
   }
 
 private:
@@ -248,14 +255,18 @@ private:
   }
 
   clang::ASTContext &Context_;
+  clang::FileID *FileID_;
   clang::Rewriter *FileRewriter_;
 };
 
 class FireConsumer : public clang::ASTConsumer
 {
 public:
-  FireConsumer(clang::Rewriter *FileRewriter, bool *FileRewriteError)
-  : FileRewriter_(FileRewriter),
+  FireConsumer(clang::FileID *FileID,
+               clang::Rewriter *FileRewriter,
+               bool *FileRewriteError)
+  : FileID_(FileID),
+    FileRewriter_(FileRewriter),
     FileRewriteError_(FileRewriteError)
   {}
 
@@ -278,7 +289,7 @@ public:
     };
 
     // create match callback
-    FireMatchCallback MatchCallback(Context, FileRewriter_);
+    FireMatchCallback MatchCallback(Context, FileID_, FileRewriter_);
 
     // create and run match finder
     clang::ast_matchers::MatchFinder MatchFinder;
@@ -302,6 +313,7 @@ public:
   }
 
 private:
+  clang::FileID *FileID_;
   clang::Rewriter *FileRewriter_;
   bool *FileRewriteError_;
 };
@@ -319,10 +331,11 @@ protected:
     CI_ = &CI;
 
     FileName_ = FileName.str();
-    FileID_ = SourceManager.getMainFileID(); // XXX
+
     FileRewriter_.setSourceMgr(SourceManager, LangOpts);
 
-    return std::make_unique<FireConsumer>(&FileRewriter_, &FileRewriteError_);
+    return std::make_unique<FireConsumer>(
+        &FileID_, &FileRewriter_, &FileRewriteError_);
   }
 
   bool ParseArgs(clang::CompilerInstance const &,
