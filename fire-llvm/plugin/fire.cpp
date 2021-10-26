@@ -111,7 +111,7 @@ public:
       if (FireParamName.empty())
           throw FireError("Parameter must not be unnamed", FireParamRange.getBegin());
 
-      auto FireParamType { FireParam->getType() };
+      auto FireParamType { removeLValueRefToConst(FireParam->getType()) };
 
       auto FireParamDefault {
         FireParam->hasDefaultArg()
@@ -121,14 +121,14 @@ public:
       std::string NewFireParamType { printType(FireParam->getType()) };
       std::string NewFireParamDefault;
 
-      if (isSTLType(FireParamType, "vector")) {
+      if (isTypeTemplate(FireParamType, "vector", "std")) {
         NewFireParamDefault = "fire::arg(fire::variadic())";
 
       } else {
-        if (isSTLType(FireParamType, "optional")) {
+        if (isTypeTemplate(FireParamType, "optional", "std")) {
           replace(NewFireParamType, "std::optional", "fire::optional");
 
-        } else if (!isSTLType(FireParamType, "string") &&
+        } else if (!isType(FireParamType, "basic_string") &&
                    !FireParamType->isBooleanType() &&
                    !FireParamType->isIntegerType() &&
                    !FireParamType->isFloatingType()) {
@@ -199,26 +199,53 @@ private:
     return Ancestors;
   }
 
-  static bool isSTLType(clang::QualType Type, std::string const &Template)
+  static clang::QualType removeLValueRefToConst(clang::QualType Type)
   {
     if (Type->isLValueReferenceType()) {
-      Type = Type.getNonReferenceType();
+      auto ReferencedType { Type.getNonReferenceType() };
 
-      if (!Type.isConstQualified())
-        return false;
+      if (ReferencedType.isConstQualified())
+        return ReferencedType;
     }
 
+    return Type;
+  }
+
+  static bool isType(clang::QualType Type,
+                     std::string const &Name,
+                     std::string const &Namespace = "")
+  {
+    auto R { Type->getAs<clang::RecordType>() };
+    if (!R)
+      return false;
+
+    auto RD { R->getDecl() };
+    if (!RD)
+      return false;
+
+    if (!Namespace.empty() && !isInNamespace(RD, Namespace))
+      return false;
+
+    return RD->getName() == Name;
+  }
+
+  static bool isTypeTemplate(clang::QualType Type,
+                             std::string const &Name,
+                             std::string const &Namespace = "")
+  {
     auto TS { Type->getAs<clang::TemplateSpecializationType>() };
     if (!TS)
       return false;
 
     auto TM { TS->getTemplateName() };
     auto TD { TM.getAsTemplateDecl() };
-
-    if (!TD || !isInNamespace(TD, "std"))
+    if (!TD)
       return false;
 
-    return TD->getName() == Template;
+    if (!Namespace.empty() && !isInNamespace(TD, Namespace))
+      return false;
+
+    return TD->getName() == Name;
   }
 
   template<typename T>
