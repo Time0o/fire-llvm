@@ -49,6 +49,11 @@ public:
     Where_(Where)
   {}
 
+  template<typename T>
+  FireError(std::string const &What, T const *Where)
+  : FireError(What, Where->getBeginLoc())
+  {}
+
   char const *what() const noexcept override
   { return What_.c_str(); }
 
@@ -73,105 +78,132 @@ public:
 
   void run(clang::ast_matchers::MatchFinder::MatchResult const &Result) override
   {
+    // Locate fire::fire_llm call
+
     auto FireCall { Result.Nodes.getNodeAs<clang::CallExpr>("fire") };
 
-    auto FireCallLoc = FireCall->getBeginLoc();
-
     if (FireCall->getNumArgs() != 1)
-      throw FireError("fire::fire_llvm expects exactly one argument", FireCallLoc);
+      throw FireError("fire::fire_llvm expects exactly one argument", FireCall);
 
-    auto FireArg { llvm::dyn_cast<clang::DeclRefExpr>(FireCall->getArg(0)) };
-    if (!FireArg)
-      throw FireError("fire::fire_llvm expects a function or class type argument", FireCallLoc);
+    auto FireCallArg { llvm::dyn_cast<clang::DeclRefExpr>(FireCall->getArg(0)) };
+    if (!FireCallArg)
+      throw FireError("fire::fire_llvm expects a function or class type argument", FireCall);
 
-    clang::FunctionDecl const *FireMain { nullptr };
+    // Locate main function.
+
+    clang::FunctionDecl const *Main { nullptr };
 
     for (auto const &FireCallAncestor : getAncestors(*FireCall)) {
-      auto MaybeFireMain { FireCallAncestor.get<clang::FunctionDecl>() };
+      auto MaybeMain { FireCallAncestor.get<clang::FunctionDecl>() };
 
-      if (MaybeFireMain && MaybeFireMain->isMain()) {
-        FireMain = MaybeFireMain;
+      if (MaybeMain && MaybeMain->isMain()) {
+        Main = MaybeMain;
         break;
       }
     }
 
-    if (!FireMain)
-      throw FireError("fire::fire_llvm must be called inside 'main'", FireCallLoc);
+    if (!Main)
+      throw FireError("fire::fire_llvm must be called inside 'main'", FireCall);
 
-    auto FireMainRange { FireMain->getSourceRange() };
+    // Replace main function.
 
-    auto FireFunctionDecl { llvm::dyn_cast<clang::FunctionDecl>(FireArg->getDecl()) };
-    assert(FireFunctionDecl); // XXX
+    std::string FireMain;
 
-    for (auto FireParam : FireFunctionDecl->parameters()) {
-      auto FireParamRange { FireParam->getSourceRange() };
+    auto FireCallArgDecl { FireCallArg->getDecl() };
 
-      auto FireParamName { FireParam->getName() };
+    if (llvm::isa<clang::FunctionDecl>(FireCallArgDecl)) {
+      auto Function { llvm::dyn_cast<clang::FunctionDecl>(FireCallArgDecl) };
 
-      if (FireParamName.empty())
-          throw FireError("Parameter must not be unnamed", FireParamRange.getBegin());
+      FireMain = fireMainFunction(Function);
 
-      auto FireParamType { removeLValueRefToConst(FireParam->getType()) };
+    } else if (llvm::isa<clang::CXXRecordDecl>(FireCallArgDecl)) {
+      auto Record { llvm::dyn_cast<clang::FunctionDecl>(FireCallArgDecl) };
 
-      auto FireParamDefault {
-        FireParam->hasDefaultArg()
-          ? printSource(FireParam->getDefaultArgRange())
-          : "" };
+      // XXX
 
-      std::string NewFireParamType { printType(FireParam->getType()) };
-      std::string NewFireParamDefault;
-
-      if (isTypeTemplate(FireParamType, "vector", "std")) {
-        NewFireParamDefault = "fire::arg(fire::variadic())";
-
-      } else {
-        if (isTypeTemplate(FireParamType, "optional", "std")) {
-          replace(NewFireParamType, "std::optional", "fire::optional");
-
-        } else if (!isType(FireParamType, "basic_string") &&
-                   !FireParamType->isBooleanType() &&
-                   !FireParamType->isIntegerType() &&
-                   !FireParamType->isFloatingType()) {
-
-          throw FireError(
-            "Parameter must have boolean, integral or floating point type "
-            "or be one of std::string, std::vector, std::optional",
-            FireParamRange.getBegin());
-        }
-
-        auto FireParamDash { FireParamName.size() > 1 ? "--" : "-" };
-
-        if (FireParamDefault.empty()) {
-          NewFireParamDefault = llvm::formatv("fire::arg(\"{0}{1}\")",
-                                              FireParamDash,
-                                              FireParamName);
-        } else {
-          NewFireParamDefault = llvm::formatv("fire::arg(\"{0}{1}\", {2})",
-                                              FireParamDash,
-                                              FireParamName,
-                                              FireParamDefault);
-        }
-      }
-
-      std::string NewFireParam { llvm::formatv("{0} {1} = {2}",
-                                               NewFireParamType,
-                                               FireParamName,
-                                               NewFireParamDefault) };
-
-      FileRewriter_->ReplaceText(FireParamRange, NewFireParam);
+    } else {
+      throw FireError("fire::fire_llvm expects a function or class type argument", FireCall);
     }
 
-    std::string NewFireMain { llvm::formatv(
-      "FIRE({0})", FireFunctionDecl->getName()) };
+    FileRewriter_->ReplaceText(Main->getSourceRange(), FireMain);
 
-    FileRewriter_->ReplaceText(FireMainRange, NewFireMain);
+    // Obtain file ID of main function.
 
     auto &SourceManager { Context_.getSourceManager() };
 
-    *FileID_ = SourceManager.getFileID(FireCallLoc);
+    *FileID_ = SourceManager.getFileID(Main->getBeginLoc());
   }
 
 private:
+  std::string fireMainFunction(clang::FunctionDecl const *Function) const
+  {
+    auto FunctionName { Function->getName() };
+
+    for (auto Param : Function->parameters())
+      FileRewriter_->ReplaceText(Param->getSourceRange(), fireParam(Param));
+
+    return llvm::formatv("FIRE({0})", FunctionName);
+  }
+
+  std::string fireParam(clang::ParmVarDecl const *Param) const
+  {
+    // Obtain parameter name/type/default value.
+
+    auto ParamName { Param->getName() };
+    if (ParamName.empty())
+        throw FireError("Parameter must not be unnamed", Param);
+
+    auto ParamType { removeLValueRefToConst(Param->getType()) };
+
+    std::string ParamDefault;
+    if (Param->hasDefaultArg())
+      ParamDefault = printSource(Param->getDefaultArgRange());
+
+    // Construct fire parameter name/type/default value.
+
+    std::string FireParamName { ParamName };
+
+    std::string FireParamType { printType(Param->getType()) };
+
+    std::string FireParamDefault;
+
+    if (isTypeTemplate(ParamType, "vector", "std")) {
+      FireParamDefault = "fire::arg(fire::variadic())";
+
+    } else {
+      if (isTypeTemplate(ParamType, "optional", "std")) {
+        replace(FireParamType, "std::optional", "fire::optional");
+
+      } else if (!isType(ParamType, "basic_string") &&
+                 !ParamType->isBooleanType() &&
+                 !ParamType->isIntegerType() &&
+                 !ParamType->isFloatingType()) {
+
+        throw FireError(
+          "Parameter must have boolean, integral or floating point type or be"
+          "one of std::string, std::vector, std::optional", Param);
+      }
+
+      auto FireParamDash { FireParamName.size() > 1 ? "--" : "-" };
+
+      if (ParamDefault.empty()) {
+        FireParamDefault = llvm::formatv("fire::arg(\"{0}{1}\")",
+                                         FireParamDash,
+                                         FireParamName);
+      } else {
+        FireParamDefault = llvm::formatv("fire::arg(\"{0}{1}\", {2})",
+                                         FireParamDash,
+                                         FireParamName,
+                                         ParamDefault);
+      }
+    }
+
+    return llvm::formatv("{0} {1} = {2}",
+                         FireParamType,
+                         FireParamName,
+                         FireParamDefault);
+  }
+
   template<typename T>
   std::vector<clang::DynTypedNode> getAncestors(T const &Node) const
   {
