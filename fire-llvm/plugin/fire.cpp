@@ -2,12 +2,14 @@
 #include <memory>
 #include <queue>
 #include <stdexcept>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
+#include "clang/AST/DeclCXX.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ParentMapContext.h"
 #include "clang/AST/PrettyPrinter.h"
@@ -33,6 +35,7 @@
 #include "compile.hpp"
 #include "node.hpp"
 #include "print.hpp"
+#include "record.hpp"
 #include "string.hpp"
 #include "type.hpp"
 
@@ -113,14 +116,18 @@ public:
 
       FireMain = fireMainFunction(Function);
 
-    } else if (llvm::isa<clang::CXXRecordDecl>(FireCallArgDecl)) {
-      auto Record { llvm::dyn_cast<clang::FunctionDecl>(FireCallArgDecl) };
+    } else if (llvm::isa<clang::ValueDecl>(FireCallArgDecl)) {
+      auto Value { llvm::dyn_cast<clang::ValueDecl>(FireCallArgDecl) };
 
-      // XXX
+      auto Record { Value->getType()->getAsCXXRecordDecl() };
+      auto RecordInstance { Value->getNameAsString() };
 
-    } else {
-      throw FireError("fire::fire_llvm expects a function or class type argument", FireCall);
+      if (Record)
+        FireMain = fireMainRecord(Record, RecordInstance);
     }
+
+    if (FireMain.empty())
+      throw FireError("fire::fire_llvm expects a function or class type argument", FireCall);
 
     FileRewriter_->ReplaceText(Main->getSourceRange(), FireMain);
 
@@ -140,6 +147,124 @@ private:
       FileRewriter_->ReplaceText(Param->getSourceRange(), fireParam(Param));
 
     return llvm::formatv("FIRE({0})", FunctionName);
+  }
+
+  std::string fireMainRecord(clang::CXXRecordDecl const *Record,
+                             std::string const &RecordInstance) const
+  {
+    // Public methods.
+    auto [publicMethods, publicMethodOptions] = record::publicMethods(Record);
+
+    // Code generation helper functions.
+
+    auto RecordName { Record->getNameAsString() };
+
+    // Name of new main entry point.
+    auto EntryPoint = [&RecordName]()
+    { return RecordName + "_main"; };
+
+    // Names of forwarding launchpad functions.
+    auto LaunchPad = [&RecordName](std::string const &MethodName, bool Fire = false)
+    { return RecordName + "_" + MethodName + (Fire ? "_fire" : ""); };
+
+    // Code generation.
+
+    std::stringstream SS;
+
+    // Begin detail namespace.
+    SS << "namespace fire::detail {\n\n";
+
+    // Launchpad functions.
+    for (auto Method : publicMethods) {
+      auto MethodName { Method->getNameAsString() };
+      auto MethodReturnType { print::type(Context_, Method->getReturnType()) };
+      auto MethodNumParams { Method->getNumParams() };
+
+      // Launchpad function header.
+      SS << MethodReturnType << " " << LaunchPad(MethodName);
+
+      SS << "(";
+      for (unsigned i { 0 }; i < MethodNumParams; ++i) {
+        auto MethodParam { Method->getParamDecl(i) };
+
+        SS << fireParam(MethodParam);
+
+        if (i + 1 < MethodNumParams)
+          SS << ", ";
+      }
+      SS << ")\n";
+
+      // Launchpad function body.
+      SS << "{ ";
+
+      if (MethodReturnType != "void")
+        SS << "return ";
+
+      SS << RecordInstance << "." << MethodName;
+
+      SS << "(";
+      for (unsigned i { 0 }; i < MethodNumParams; ++i) {
+        auto MethodParam { Method->getParamDecl(i) };
+        auto MethodParamName { MethodParam->getNameAsString() };
+
+        SS << MethodParamName;
+
+        if (i + 1 < MethodNumParams)
+          SS << ", ";
+      }
+      SS << ")";
+
+      SS << "; }\n\n";
+
+      // FIRE_FUNC() call.
+      std::string FireFunc {
+        llvm::formatv("FIRE_FUNC({0}, {1})\n\n",
+                      LaunchPad(MethodName, true),
+                      LaunchPad(MethodName)) };
+
+      SS << FireFunc;
+    }
+
+    // Entry point header.
+    std::string EntryPointerHeader {
+      llvm::formatv(
+        "int {0}(std::string method = fire::arg({0, \"<method>\", \"({1})\"}))\n",
+        EntryPoint(),
+        publicMethodOptions) };
+
+    SS << EntryPointerHeader;
+
+    // Entry point body.
+    SS << "{\n";
+
+    for (auto Method : publicMethods) {
+      auto MethodName { Method->getNameAsString() };
+
+      std::string EntryPointBranch {
+        llvm::formatv(
+          "if (method == \"{0}\") {1}({2}, {3});\n",
+          MethodName,
+          LaunchPad(MethodName, true),
+          "fire::raw_args.argc() - 1",
+          "const_cast<const char **>(fire::raw_args.argv()) + 1") };
+
+      SS << EntryPointBranch;
+    }
+
+    SS << "  return 0;\n";
+
+    SS << "}\n\n";
+
+    // End detail namespace.
+    SS << "} // end namespace fire::detail\n\n";
+
+    // FIRE() call.
+    std::string Fire {
+      llvm::formatv("FIRE_ALLOW_UNUSED(fire::detail::{0});", EntryPoint()) };
+
+    SS << Fire;
+
+    return SS.str();
   }
 
   std::string fireParam(clang::ParmVarDecl const *Param) const
