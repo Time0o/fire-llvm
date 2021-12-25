@@ -30,16 +30,13 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 
-namespace {
+#include "compile.hpp"
+#include "node.hpp"
+#include "print.hpp"
+#include "string.hpp"
+#include "type.hpp"
 
-static void replace(std::string &Str,
-                    std::string const &From,
-                    std::string const &To)
-{
-  auto It { Str.find(From) };
-  if (It != std::string::npos)
-    Str.replace(It, From.size(), To);
-}
+namespace {
 
 class FireError : public std::exception
 {
@@ -93,7 +90,7 @@ public:
 
     clang::FunctionDecl const *Main { nullptr };
 
-    for (auto const &FireCallAncestor : getAncestors(*FireCall)) {
+    for (auto const &FireCallAncestor : node::getAncestors(Context_, *FireCall)) {
       auto MaybeMain { FireCallAncestor.get<clang::FunctionDecl>() };
 
       if (MaybeMain && MaybeMain->isMain()) {
@@ -153,28 +150,31 @@ private:
     if (ParamName.empty())
         throw FireError("Parameter must not be unnamed", Param);
 
-    auto ParamType { removeLValueRefToConst(Param->getType()) };
+    auto ParamType { Param->getType() };
+    if (ParamType->isLValueReferenceType() &&
+        ParamType.getNonReferenceType().isConstQualified())
+      ParamType = ParamType.getNonReferenceType();
 
     std::string ParamDefault;
     if (Param->hasDefaultArg())
-      ParamDefault = printSource(Param->getDefaultArgRange());
+      ParamDefault = print::source(Context_, Param->getDefaultArgRange());
 
     // Construct fire parameter name/type/default value.
 
     std::string FireParamName { ParamName };
 
-    std::string FireParamType { printType(Param->getType()) };
+    std::string FireParamType { print::type(Context_, Param->getType()) };
 
     std::string FireParamDefault;
 
-    if (isTypeTemplate(ParamType, "vector", "std")) {
+    if (type::isTemplate(ParamType, "vector", "std")) {
       FireParamDefault = "fire::arg(fire::variadic())";
 
     } else {
-      if (isTypeTemplate(ParamType, "optional", "std")) {
-        replace(FireParamType, "std::optional", "fire::optional");
+      if (type::isTemplate(ParamType, "optional", "std")) {
+        str::replace(FireParamType, "std::optional", "fire::optional");
 
-      } else if (!isType(ParamType, "basic_string") &&
+      } else if (!type::is(ParamType, "basic_string") &&
                  !ParamType->isBooleanType() &&
                  !ParamType->isIntegerType() &&
                  !ParamType->isFloatingType()) {
@@ -202,115 +202,6 @@ private:
                          FireParamType,
                          FireParamName,
                          FireParamDefault);
-  }
-
-  template<typename T>
-  std::vector<clang::DynTypedNode> getAncestors(T const &Node) const
-  {
-    std::vector<clang::DynTypedNode> Ancestors;
-
-    std::queue<clang::DynTypedNode> ParentQueue;
-
-    for (auto const &Parent : Context_.getParents(Node))
-      ParentQueue.push(Parent);
-
-    while (!ParentQueue.empty()) {
-      std::size_t NumParents { ParentQueue.size() };
-
-      for (std::size_t i = 0; i < NumParents; ++i) {
-        auto Parent { ParentQueue.front() };
-        ParentQueue.pop();
-
-        Ancestors.push_back(Parent);
-
-        for (auto const &GrandParent : Context_.getParents(Parent))
-          ParentQueue.push(GrandParent);
-      }
-    }
-
-    return Ancestors;
-  }
-
-  static clang::QualType removeLValueRefToConst(clang::QualType Type)
-  {
-    if (Type->isLValueReferenceType()) {
-      auto ReferencedType { Type.getNonReferenceType() };
-
-      if (ReferencedType.isConstQualified())
-        return ReferencedType;
-    }
-
-    return Type;
-  }
-
-  static bool isType(clang::QualType Type,
-                     std::string const &Name,
-                     std::string const &Namespace = "")
-  {
-    auto R { Type->getAs<clang::RecordType>() };
-    if (!R)
-      return false;
-
-    auto RD { R->getDecl() };
-    if (!RD)
-      return false;
-
-    if (!Namespace.empty() && !isInNamespace(RD, Namespace))
-      return false;
-
-    return RD->getName() == Name;
-  }
-
-  static bool isTypeTemplate(clang::QualType Type,
-                             std::string const &Name,
-                             std::string const &Namespace = "")
-  {
-    auto TS { Type->getAs<clang::TemplateSpecializationType>() };
-    if (!TS)
-      return false;
-
-    auto TM { TS->getTemplateName() };
-    auto TD { TM.getAsTemplateDecl() };
-    if (!TD)
-      return false;
-
-    if (!Namespace.empty() && !isInNamespace(TD, Namespace))
-      return false;
-
-    return TD->getName() == Name;
-  }
-
-  template<typename T>
-  static bool isInNamespace(T const *Decl, std::string const &Namespace)
-  {
-     auto ND { llvm::dyn_cast<clang::NamespaceDecl>(Decl->getDeclContext()) };
-     if (!ND)
-       return false;
-
-     auto II { ND->getIdentifier() };
-     if (!II || II->getName() != Namespace)
-       return false;
-
-     return llvm::isa<clang::TranslationUnitDecl>(ND->getDeclContext());
-  }
-
-  std::string printType(clang::QualType const &Type) const
-  {
-    auto &LangOpts { Context_.getLangOpts() };
-
-    clang::PrintingPolicy PP { LangOpts };
-
-    return Type.getAsString(PP);
-  }
-
-  std::string printSource(clang::SourceRange const &Range) const
-  {
-    auto &SourceManager { Context_.getSourceManager() };
-
-    auto Begin { SourceManager.getCharacterData(Range.getBegin()) };
-    auto End { SourceManager.getCharacterData(Range.getEnd()) };
-
-    return std::string(Begin, End - Begin + 1);
   }
 
   clang::ASTContext &Context_;
@@ -413,40 +304,9 @@ protected:
     if (FileRewriteError_)
       return;
 
-    auto &CodeGenOpts { CI_->getCodeGenOpts() };
-    auto &Target { CI_->getTarget() };
-    auto &Diagnostics { CI_->getDiagnostics() };
-
-    // retrieve rewrite buffer
     auto FileRewriteBuffer { FileRewriter_.getRewriteBufferFor(FileID_) };
 
-    std::string FileContent {
-        FileRewriteBuffer->begin(), FileRewriteBuffer->end() };
-
-    auto FileMemoryBuffer { llvm::MemoryBuffer::getMemBufferCopy(FileContent) };
-
-    // create new compiler instance
-    auto CInvNew { std::make_shared<clang::CompilerInvocation>() };
-
-    assert(clang::CompilerInvocation::CreateFromArgs(
-      *CInvNew, CodeGenOpts.CommandLineArgs, Diagnostics));
-
-    clang::CompilerInstance CINew;
-    CINew.setInvocation(CInvNew);
-    CINew.setTarget(&Target);
-    CINew.createDiagnostics();
-
-    // create "virtual" input file
-    auto &PreprocessorOpts { CINew.getPreprocessorOpts() };
-
-    PreprocessorOpts.addRemappedFile(FileName_, FileMemoryBuffer.get());
-
-    // generate code
-    clang::EmitObjAction EmitObj;
-    CINew.ExecuteAction(EmitObj);
-
-    // clean up rewrite buffer
-    FileMemoryBuffer.release();
+    compile(CI_, FileName_, FileRewriteBuffer->begin(), FileRewriteBuffer->end());
   }
 
 private:
