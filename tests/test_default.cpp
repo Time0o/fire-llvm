@@ -6,8 +6,7 @@ namespace {
 
 int fire_main_default(int def = 0)
 {
-  std::cout << "def = " << def << std::endl;
-  return 0;
+  return def;
 }
 
 }

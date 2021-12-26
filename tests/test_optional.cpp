@@ -6,14 +6,12 @@
 namespace {
 
 // XXX make fire::optional implement complete std::optional interface
-int fire_main_optional(std::optional<int> opt)
+void fire_main_optional(std::optional<int> opt)
 {
   if (opt)
     std::cout << "opt = " << opt.value() << std::endl;
   else
     std::cout << "opt = nothing" << std::endl;
-
-  return 0;
 }
 
 }

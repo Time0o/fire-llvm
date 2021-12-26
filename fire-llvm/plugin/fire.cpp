@@ -159,13 +159,13 @@ private:
 
     auto RecordName { Record->getNameAsString() };
 
-    // Name of new main entry point.
-    auto EntryPoint = [&RecordName]()
-    { return RecordName + "_main"; };
-
     // Names of forwarding launchpad functions.
-    auto LaunchPad = [&RecordName](std::string const &MethodName, bool Fire = false)
+    auto Launch = [&RecordName](std::string const &MethodName, bool Fire = false)
     { return RecordName + "_" + MethodName + (Fire ? "_fire" : ""); };
+
+    // Name of new main entry point.
+    auto LaunchEntry = [&RecordName]()
+    { return RecordName + "_main"; };
 
     // Code generation.
 
@@ -181,7 +181,7 @@ private:
       auto MethodNumParams { Method->getNumParams() };
 
       // Launchpad function header.
-      SS << MethodReturnType << " " << LaunchPad(MethodName);
+      SS << MethodReturnType << " " << Launch(MethodName);
 
       SS << "(";
       for (unsigned i { 0 }; i < MethodNumParams; ++i) {
@@ -216,23 +216,23 @@ private:
 
       SS << "; }\n\n";
 
-      // FIRE_FUNC() call.
+      // FIRE_LAUNCH() call.
       std::string FireFunc {
-        llvm::formatv("FIRE_FUNC({0}, {1})\n\n",
-                      LaunchPad(MethodName, true),
-                      LaunchPad(MethodName)) };
+        llvm::formatv("FIRE_LAUNCH({0}, {1})\n\n",
+                      Launch(MethodName, true),
+                      Launch(MethodName)) };
 
       SS << FireFunc;
     }
 
     // Entry point header.
-    std::string EntryPointerHeader {
+    std::string LaunchEntryerHeader {
       llvm::formatv(
         "int {0}(std::string method = fire::arg({0, \"<method>\", \"({1})\"}))\n",
-        EntryPoint(),
+        LaunchEntry(),
         publicMethodOptions) };
 
-    SS << EntryPointerHeader;
+    SS << LaunchEntryerHeader;
 
     // Entry point body.
     SS << "{\n";
@@ -240,15 +240,15 @@ private:
     for (auto Method : publicMethods) {
       auto MethodName { Method->getNameAsString() };
 
-      std::string EntryPointBranch {
+      std::string LaunchEntryBranch {
         llvm::formatv(
           "if (method == \"{0}\") {1}({2}, {3});\n",
           MethodName,
-          LaunchPad(MethodName, true),
+          Launch(MethodName, true),
           "fire::raw_args.argc() - 1",
           "const_cast<const char **>(fire::raw_args.argv()) + 1") };
 
-      SS << EntryPointBranch;
+      SS << LaunchEntryBranch;
     }
 
     SS << "  return 0;\n";
@@ -260,7 +260,7 @@ private:
 
     // FIRE() call.
     std::string Fire {
-      llvm::formatv("FIRE_ALLOW_UNUSED(fire::detail::{0});", EntryPoint()) };
+      llvm::formatv("FIRE_LAUNCH_ENTRY(fire::detail::{0});", LaunchEntry()) };
 
     SS << Fire;
 

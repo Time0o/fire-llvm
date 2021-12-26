@@ -6,8 +6,7 @@ namespace {
 
 int fire_main_add(int a, int b)
 {
-  std::cout << "a + b = " << a + b << std::endl;
-  return 0;
+  return a + b;
 }
 
 }

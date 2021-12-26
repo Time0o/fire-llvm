@@ -5,7 +5,7 @@
 
 namespace {
 
-int fire_main_variadic(std::vector<int> const &variadic)
+void fire_main_variadic(std::vector<int> const &variadic)
 {
   std::cout << "variadic = {";
 
@@ -16,8 +16,6 @@ int fire_main_variadic(std::vector<int> const &variadic)
   }
 
   std::cout << "}";
-
-  return 0;
 }
 
 }

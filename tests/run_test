@@ -10,7 +10,7 @@ TEST_CASES = {
         (['--msg', 'hello world'], 'hello world')
     ],
     'add': [
-        (['-a=1', '-b=2'], 'a + b = 3')
+        (['-a=1', '-b=2'], '3')
     ],
     'flag': [
         ([], 'flag_a = 0, flag_b = 0'),
@@ -19,8 +19,8 @@ TEST_CASES = {
         (['--flag_a', '--flag_b'], 'flag_a = 1, flag_b = 1')
     ],
     'default': [
-        ([], 'def = 0'),
-        (['--def=1'], 'def = 1')
+        ([], '0'),
+        (['--def=1'], '1')
     ],
     'optional': [
         ([], 'opt = nothing'),
@@ -33,8 +33,8 @@ TEST_CASES = {
         (['1', '2', '3'], 'variadic = {1, 2, 3}')
     ],
     'class': [
-        (['add', '-a=1', '-b=2'], 'a + b = 3'),
-        (['sub', '-a=1', '-b=2'], 'a - b = -1')
+        (['add', '-a=1', '-b=2'], '3'),
+        (['sub', '-a=1', '-b=2'], '-1')
     ]
 }
 
