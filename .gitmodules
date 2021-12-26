@@ -1,3 +1,6 @@
 [submodule "fire-hpp"]
 	path = fire-hpp
 	url = https://github.com/kongaskristjan/fire-hpp
+[submodule "ClangSetup"]
+	path = ClangSetup
+	url = https://github.com/Time0o/ClangSetup

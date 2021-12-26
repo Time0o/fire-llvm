@@ -8,12 +8,17 @@ include(CTest)
 
 option(FIRE_LLVM_ENABLE_TESTING "Enable tests" ON)
 
-find_package(LLVM REQUIRED CONFIG)
+# Clang
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/ClangSetup)
 
+include(ClangSetup)
+
+# fire-hpp
 set(FIRE_EXAMPLES OFF CACHE BOOL "Compile fire-hpp examples")
 set(FIRE_UNIT_TESTS OFF CACHE BOOL "Enable fire-hpp unit tests")
 add_subdirectory(fire-hpp EXCLUDE_FROM_ALL)
 
+# fire-llvm
 add_subdirectory(fire-llvm)
 
 function(fire_llvm_config TARGET)
