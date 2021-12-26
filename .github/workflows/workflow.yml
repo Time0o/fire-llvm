@@ -1,0 +1,41 @@
+name: build and run tests
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        CXX: [clang++-11, clang++-12]
+        include:
+        - CXX: clang++-11
+          DEPS: clang-11 llvm-11-dev libclang-11-dev libclang-cpp11-dev
+
+        - CXX: clang++-12
+          DEPS: clang-12 llvm-12-dev libclang-12-dev libclang-cpp12-dev
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: install-dependencies
+        run: >
+          sudo apt-get update &&
+          sudo apt-get install -yq ${{ matrix.DEPS }}
+      - name: cmake-configure
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=${{ matrix.CXX }}
+      - name: cmake-build
+        run: cmake --build build
+
+      - name: test-run
+        run: cmake --build build --target test
+        env:
+          CTEST_OUTPUT_ON_FAILURE: 1

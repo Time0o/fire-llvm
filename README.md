@@ -58,7 +58,7 @@ For more examples, take a look at the tests in the `tests` directory.
 ## Installation
 
 To build fire-llvm you will need the LLVM development libraries. I have tested
-this with Clang/LLVM version 12.0.\*, minor tweaks might be needed for other
+this with Clang/LLVM version 11 and 12 minor tweaks might be needed for other
 versions.
 
 To build the plugin, run:
