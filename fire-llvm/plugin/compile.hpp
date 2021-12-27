@@ -5,6 +5,7 @@
 
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/CompilerInvocation.h"
+#include "clang/Lex/PreprocessorOptions.h"
 
 #include "llvm/Support/MemoryBuffer.h"
 

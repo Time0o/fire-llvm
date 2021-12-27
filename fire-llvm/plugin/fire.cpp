@@ -1,6 +1,4 @@
-#include <cassert>
 #include <memory>
-#include <queue>
 #include <stdexcept>
 #include <sstream>
 #include <string>
@@ -10,10 +8,6 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
-#include "clang/AST/Expr.h"
-#include "clang/AST/ParentMapContext.h"
-#include "clang/AST/PrettyPrinter.h"
-#include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/Basic/Diagnostic.h"
@@ -24,13 +18,11 @@
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
-#include "clang/Lex/PreprocessorOptions.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/MemoryBuffer.h"
 
 #include "compile.hpp"
 #include "node.hpp"
