@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <memory>
 #include <string>
 
@@ -22,8 +23,11 @@ inline void compile(clang::CompilerInstance *CI,
   // create new compiler instance
   auto CInvNew { std::make_shared<clang::CompilerInvocation>() };
 
-  assert(clang::CompilerInvocation::CreateFromArgs(
-    *CInvNew, CodeGenOpts.CommandLineArgs, Diagnostics));
+  bool CInvNewCreated {
+    clang::CompilerInvocation::CreateFromArgs(
+      *CInvNew, CodeGenOpts.CommandLineArgs, Diagnostics) };
+
+  assert(CInvNewCreated);
 
   clang::CompilerInstance CINew;
   CINew.setInvocation(CInvNew);
