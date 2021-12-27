@@ -13,14 +13,12 @@ TEST_CASES = {
         (['-a=1', '-b=2'], '3')
     ],
     'flag': [
-        ([], 'flag_a = 0, flag_b = 0'),
-        (['--flag_a'], 'flag_a = 1, flag_b = 0'),
-        (['--flag_b'], 'flag_a = 0, flag_b = 1'),
-        (['--flag_a', '--flag_b'], 'flag_a = 1, flag_b = 1')
-    ],
-    'default': [
         ([], '0'),
-        (['--def=1'], '1')
+        (['-f'], '1')
+    ],
+    'default_arg': [
+        ([], '0'),
+        (['-d=1'], '1')
     ],
     'optional': [
         ([], 'opt = nothing'),
@@ -28,13 +26,19 @@ TEST_CASES = {
     ],
     'variadic': [
         ([], 'variadic = {}'),
-        (['1'], 'variadic = {1}'),
-        (['1', '2'], 'variadic = {1, 2}'),
         (['1', '2', '3'], 'variadic = {1, 2, 3}')
     ],
     'class': [
+        (['hello', '--msg', 'hello world'], 'hello world'),
         (['add', '-a=1', '-b=2'], '3'),
-        (['sub', '-a=1', '-b=2'], '-1')
+        (['flag'], '0'),
+        (['flag', '-f'], '1'),
+        (['default_arg'], '0'),
+        (['default_arg', '-d=1'], '1'),
+        (['optional'], 'opt = nothing'),
+        (['optional', '--opt=1'], 'opt = 1'),
+        (['variadic'], 'variadic = {}'),
+        (['variadic', '1', '2', '3'], 'variadic = {1, 2, 3}')
     ]
 }
 

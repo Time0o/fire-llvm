@@ -4,9 +4,9 @@
 
 namespace {
 
-void fire_main_hello(std::string const &msg)
+std::string fire_main_hello(std::string const &msg)
 {
-  std::cout << msg << std::endl;
+  return msg;
 }
 
 }

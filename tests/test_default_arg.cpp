@@ -1,17 +1,15 @@
 #include <fire-llvm/fire.hpp>
 
-#include <iostream>
-
 namespace {
 
-int fire_main_default(int def = 0)
+int default_arg(int d = 0)
 {
-  return def;
+  return d;
 }
 
 }
 
 int main()
 {
-  fire::fire_llvm(fire_main_default);
+  fire::fire_llvm(default_arg);
 }
