@@ -35,7 +35,7 @@ int main()
 run `clang++ -Xclang -load -Xclang $FIRE_LLVM_PLUGIN -Xclang -add-plugin
 -Xclang fire -I fire-llvm/include calc.cc -o calc` to create an executable
 `calc`. Here, `$FIRE_LLVM_PLUGIN` should expand to the location of the shared
-object created when building this plugin [Installation](#installation).
+object created when building this plugin (see [Installation](#installation)).
 Alternatively, if you're building `calc` with CMake you could use the
 `fire_llvm_config` function:
 
@@ -58,7 +58,7 @@ For more examples, take a look at the tests in the `tests` directory.
 ## Installation
 
 To build fire-llvm you will need the LLVM development libraries. I have tested
-this with Clang/LLVM version 11 and 12 minor tweaks might be needed for other
+this with Clang/LLVM version 11 and 12. Minor tweaks might be needed for other
 versions.
 
 To build the plugin, run:
@@ -66,11 +66,11 @@ To build the plugin, run:
 ```
 mkdir build
 cd build
-cmake ..
+cmake .. -DCMAKE_CXX_COMPILER=clang++
 make
 ```
 
-which will create the plugin under
+where `clang++` should have version 11 or 12. This will create the plugin under
 `build/fire-llvm/plugin/libfire-llvm-plugin.so`. Due to some CMake wonkiness
 the build will likely fail if you try to run several make jobs in parallel with
 `-j`.
