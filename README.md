@@ -71,7 +71,9 @@ make
 ```
 
 which will create the plugin under
-`build/fire-llvm/plugin/libfire-llvm-plugin.so`.
+`build/fire-llvm/plugin/libfire-llvm-plugin.so`. Due to some CMake wonkiness
+the build will likely fail if you try to run several make jobs in parallel with
+`-j`.
 
 ## Ackknowledgements
 
